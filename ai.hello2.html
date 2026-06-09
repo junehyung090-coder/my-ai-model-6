@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 포즈 모델 테스트 페이지</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: #4a00e0;
+            margin-bottom: 10px;
+        }
+
+        p {
+            color: #666;
+            font-size: 0.95rem;
+            margin-bottom: 25px;
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #8e2de2, #4a00e0);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(74, 0, 224, 0.3);
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(74, 0, 224, 0.4);
+        }
+
+        #webcam-container {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+        }
+
+        #webcam-container canvas {
+            border-radius: 12px;
+            border: 4px solid #e0e0e0;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        #label-container {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .result-bar {
+            background-color: #f3f3f3;
+            border-radius: 8px;
+            padding: 10px 15px;
+            width: 90%;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>AI 포즈 인식 카메라</h1>
+    <p>아래 버튼을 눌러 카메라를 켜고 멋진 포즈를 취해보세요!</p>
+    
+    <button class="btn-start" type="button" onclick="init()">시작하기</button>
+    
+    <div id="webcam-container"></div>
+    <div id="label-container"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8.6/dist/teachablemachine-pose.min.js"></script>
+
+<script type="text/javascript">
+    const URL = "https://teachablemachine.withgoogle.com/models/p0xqNdjt7/";
+    let model, webcam, ctx, labelContainer, maxPredictions;
+
+    async function init() {
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+
+        // 🔴 tmPose로 모델 로드
+        model = await tmPose.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        // 웹캠 세팅
+        const flip = true; 
+        webcam = new tmPose.Webcam(300, 300, flip); 
+        await webcam.setup(); 
+        await webcam.play();
+        window.requestAnimationFrame(loop);
+
+        // 웹캠 화면(Canvas) 배치
+        const canvas = webcam.canvas;
+        document.getElementById("webcam-container").appendChild(canvas);
+        ctx = canvas.getContext("2d");
+
+        // 결과창 설정
+        labelContainer = document.getElementById("label-container");
+        labelContainer.innerHTML = "";
+        for (let i = 0; i < maxPredictions; i++) {
+            const resultDiv = document.createElement("div");
+            resultDiv.className = "result-bar";
+            labelContainer.appendChild(resultDiv);
+        }
+    }
+
+    async function loop(timestamp) {
+        webcam.update(); 
+        await predict();
+        window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+        // 🔴 웹캠에서 포즈(관절 위치) 데이터와 예측 결과를 함께 가져옵니다.
+        const { pose, minPartConfidence, probabilities } = await model.estimatePose(webcam.canvas);
+        const prediction = await model.predict(webcam.canvas);
+
+        // 1. 실시간으로 수치 표시
+        for (let i = 0; i < maxPredictions; i++) {
+            const probability = (prediction[i].probability * 100).toFixed(0);
+            labelContainer.childNodes[i].innerHTML = `${prediction[i].className} : ${probability}%`;
+        }
+
+        // 2. 화면에 알록달록한 스켈레톤(뼈대) 선 그려주기
+        drawPose(pose);
+    }
+
+    // 뼈대를 그려주는 보조 함수
+    function drawPose(pose) {
+        if (webcam.canvas) {
+            ctx.drawImage(webcam.canvas, 0, 0);
+            if (pose) {
+                const minPartConfidence = 0.5;
+                tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
+                tmPose.drawSkeleton(pose.keypoints, minPartConfidence, ctx);
+            }
+        }
+    }
+</script>
+
+</body>
+</html>
