@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>인공지능 졸음 감지 시스템</title>
+    <style>
+        /* 1. 전체 배경색 및 중앙 정렬 */
+        body {
+            background-color: #1e222b;
+            color: #ffffff;
+            font-family: 'Malgun Gothic', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            transition: background-color 0.2s ease; /* 배경색 변경을 부드럽게 */
+        }
+
+        /* 2. 상단 흰색 제목 */
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: -1px;
+        }
+
+        p {
+            color: #a0aec0;
+            margin-bottom: 30px;
+            font-size: 1.1rem;
+        }
+
+        /* 3. 시작하기 버튼 디자인 (둥근 모서리 12px) */
+        button {
+            background-color: #4CAF50;
+            color: white;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border: none;
+            padding: 14px 35px;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+            transition: all 0.2s ease;
+            margin-bottom: 30px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        /* 4. 웹캠 컨테이너 박스 (가로 400px, 세로 300px, 하얗고 부드러운 테두리) */
+        #webcam-container {
+            width: 400px;
+            height: 300px;
+            background-color: #2d3748;
+            border: 4px solid #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        /* 포즈 모델의 캔버스가 박스에 꽉 차도록 조절 */
+        #canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover;
+        }
+
+        /* 5. 상태창 박스 (글자 크기 24px, 굵게) */
+        #label-container {
+            font-size: 24px;
+            font-weight: bold;
+            background-color: #2d3748;
+            padding: 15px 40px;
+            border-radius: 25px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            min-width: 250px;
+            text-align: center;
+        }
+
+        #label-container div {
+            margin: 5px 0;
+        }
+
+        /* 🔥 졸음 상태일 때 화면 전체가 붉은색으로 강렬하게 깜빡이는 애니메이션 */
+        @keyframes blink-red {
+            0% { background-color: #1e222b; }
+            50% { background-color: #b30000; } /* 선명한 붉은색 사이렌 효과 */
+            100% { background-color: #1e222b; }
+        }
+
+        body.warning {
+            animation: blink-red 0.8s infinite; /* 0.8초 주기로 무한 반복 */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>인공지능 졸음 감지 시스템</h1>
+    <p>웹캠을 정면으로 바라보고 시작하기 버튼을 눌러주세요.</p>
+    
+    <button type="button" onclick="init()">시작하기</button>
+    
+    <div id="webcam-container">
+        <canvas id="canvas"></canvas>
+    </div>
+    
+    <div id="label-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+    
+    <script type="text/javascript">
+        // 티처블 머신 포즈 모델 저장소 주소
+        const URL = "https://teachablemachine.withgoogle.com/models/PKCf_UDGj/";
+        let model, webcam, ctx, labelContainer, maxPredictions;
+
+        // 경고 알람음 오디오 객체 생성
+        const alarmAudio = new Audio("https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg");
+        alarmAudio.loop = true; // 잠에서 깰 때까지 반복 재생
+
+        async function init() {
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            // 포즈 모델 로드
+            model = await tmPose.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+
+            // 컨테이너 크기에 맞춰 웹캠 선명도를 400으로 셋업
+            const size = 400;
+            const flip = true; 
+            webcam = new tmPose.Webcam(size, size, flip); 
+            await webcam.setup(); 
+            await webcam.play();
+            window.requestAnimationFrame(loop);
+
+            // DOM 캔버스 연결 및 설정
+            const canvas = document.getElementById("canvas");
+            canvas.width = size; canvas.height = size;
+            ctx = canvas.getContext("2d");
+            labelContainer = document.getElementById("label-container");
+            
+            // 초기화 후 레이블 생성
+            labelContainer.innerHTML = "";
+            for (let i = 0; i < maxPredictions; i++) { 
+                labelContainer.appendChild(document.createElement("div"));
+            }
+        }
+
+        async function loop(timestamp) {
+            webcam.update(); 
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            // 포즈 좌표 모델 분석
+            const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+            const prediction = await model.predict(posenetOutput);
+
+            // 실시간 클래스별 확률값 화면 표시
+            for (let i = 0; i < maxPredictions; i++) {
+                const classPrediction =
+                    prediction[i].className + ": " + (prediction[i].probability * 100).toFixed(0) + "%";
+                labelContainer.childNodes[i].innerHTML = classPrediction;
+            }
+
+            // -------------------------------------------------------------
+            // 💡 지능형 클래스 예외 처리 시스템
+            // 티처블 머신에 등록한 클래스명 중 '졸음' 혹은 'Drowsy'가 포함된 클래스만 추적합니다.
+            // 새로 추가한 '필기' 혹은 'Writing' 클래스는 이 조건문에 걸리지 않으므로 
+            // 고개를 숙여도 알람이 울리지 않고 안전하게 정상 처리됩니다.
+            // -------------------------------------------------------------
+            let triggerWarning = false;
+
+            for (let i = 0; i < maxPredictions; i++) {
+                const name = prediction[i].className;
+                const probability = prediction[i].probability;
+
+                // 이름에 '졸음' 또는 'drowsy'가 들어가고, 확률이 80%(0.8) 이상일 때만 경고 트리거
+                if ((name.includes("졸음") || name.toLowerCase().includes("drowsy")) && probability >= 0.8) {
+                    triggerWarning = true;
+                    break;
+                }
+            }
+
+            // 🚨 최종 UI 반응 및 오디오 제어
+            if (triggerWarning) {
+                document.body.classList.add('warning'); // 화면 강렬하게 붉은색 깜빡임 활성화
+                alarmAudio.play().catch(e => console.log("소리 출력을 위해 브라우저 화면을 먼저 한 번 클릭해 주세요."));
+            } else {
+                document.body.classList.remove('warning'); // 일반 차콜색 배경 유지
+                alarmAudio.pause();
+                alarmAudio.currentTime = 0; // 오디오 재생 위치 초기화
+            }
+
+            // 웹캠 위에 뼈대 관절 포인트 그리기
+            drawPose(pose);
+        }
+
+        function drawPose(pose) {
+            if (webcam.canvas) {
+                ctx.drawImage(webcam.canvas, 0, 0);
+                if (pose) {
+                    const minPartConfidence = 0.5;
+                    tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
+                    tmPose.drawSkeleton(pose.keypoints, minPartConfidence, ctx);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
